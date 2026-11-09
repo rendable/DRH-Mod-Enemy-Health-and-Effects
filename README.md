@@ -6,14 +6,13 @@ I no longer really play the game, so ongoing updates and fixes are unlikely.
 
 <!-- drh:show -->
 Adds numerical enemy HP, encounter-specific boss panels, player mana bars and active buff/debuff icons.
-<!-- /drh:show -->
 
 - Native enemy and breakable-prop HP bars with readable white values, revealed after damage.
 - Compact encounter-specific boss panels, capped at three rows, while retaining numerical overhead HP bars.
 - Three number-free Golem segments track its lava-pool objectives.
 - Other players get numerical HP and purple mana bars, with profile-picture spacing.
 - Enemy, boss and remote-player buff/debuff icons show stacks without estimated countdowns.
-
+<!-- /drh:show -->
 
 ## Requirements
 
