@@ -4,8 +4,6 @@ I no longer really play the game, so ongoing updates and fixes are unlikely.
 
 # Enemy Health and Effects
 
-Adds numerical enemy HP, encounter-specific boss panels, player mana bars and active buff/debuff icons.
-
 <!-- drh:show -->
 Adds numerical enemy HP, encounter-specific boss panels, player mana bars and active buff/debuff icons.
 <!-- /drh:show -->
@@ -16,7 +14,6 @@ Adds numerical enemy HP, encounter-specific boss panels, player mana bars and ac
 - Other players get numerical HP and purple mana bars, with profile-picture spacing.
 - Enemy, boss and remote-player buff/debuff icons show stacks without estimated countdowns.
 
-Boss rules distinguish designated encounters from later miniboss appearances. The Prison panel includes Elite Juggernaut, while the later Knight Fortress Gauntlet panel includes Rival Berserker. Gate-enemy outlines are not included.
 
 ## Requirements
 
