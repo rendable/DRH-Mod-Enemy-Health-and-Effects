@@ -61,7 +61,7 @@ class Main extends Mod {
         bossOverflow = new NativeHpText(loader, 0.7);
         bossLayer.addChild(bossOverflow);
         bossOverflow.visible = false;
-        context.log("loaded: native enemy HP, boss bars, player mana, and enemy/player effect icons without countdowns");
+        context.log("loaded: native enemy HP, boss bars, player mana, and remote-player effect icons without countdowns");
     }
 
     function recordBuff(buff:DistributedBuffGameObject):Void {
@@ -182,7 +182,6 @@ class Main extends Mod {
                 entry.decorations.visible = true;
                 entry.decorations.scaleX = 1 / Math.max(0.01, Math.abs(root.scaleX));
                 entry.decorations.scaleY = 1 / Math.max(0.01, Math.abs(root.scaleY));
-                if (!entry.boss) updateEffects(entry);
             }
             renderBosses(bossCandidates, golemRemaining);
             var remove:Array<Int> = [];
@@ -196,10 +195,6 @@ class Main extends Mod {
             clearEnemies();
             context.log("enemy overlay stopped: " + Std.string(error));
         }
-    }
-
-    function updateEffects(entry:EnemyEntry):Void {
-        syncEffects(entry.npc.id, entry.effects, entry.effectLayer, entry.panelSelected ? entry.panel.effectColumns() : 6, 0, entry.panelSelected);
     }
 
     function renderBosses(candidates:Array<EnemyEntry>, golemRemaining:Int):Void {
@@ -229,15 +224,12 @@ class Main extends Mod {
                 entry.panel.y = top + row * 56;
                 entry.syncTag(true);
             }
-            updateEffects(entry);
         }
         var bottom = top;
         for (id in selected) {
             var entry = entries.get(id);
             entry.panel.y = bottom;
-            var effectCount = 0;
-            for (type in entry.effects.keys()) effectCount++;
-            bottom += effectCount == 0 ? 56 : 64 + Math.max(0, Math.ceil(effectCount / entry.panel.effectColumns()) - 1) * 27;
+            bottom += 56;
         }
         var extra = candidates.length - selected.length;
         if (extra > 0) {
