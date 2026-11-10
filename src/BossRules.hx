@@ -1,4 +1,4 @@
-package mods.enemy_health;
+package mods.enemy_health_and_effects;
 
 /** Map plus custom-floor signature, never a monster-name substring. */
 class BossRules {

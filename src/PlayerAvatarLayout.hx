@@ -1,4 +1,4 @@
-package mods.enemy_health;
+package mods.enemy_health_and_effects;
 
 import openfl.display.DisplayObject;
 import openfl.display.DisplayObjectContainer;

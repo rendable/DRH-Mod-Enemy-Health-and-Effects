@@ -1,4 +1,4 @@
-package mods.enemy_health;
+package mods.enemy_health_and_effects;
 
 /** Stable row assignment, with at most one replacement for a newly damaged boss. */
 class BossSlots {

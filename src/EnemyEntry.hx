@@ -1,4 +1,4 @@
-package mods.enemy_health;
+package mods.enemy_health_and_effects;
 
 import distributedObjects.NPCGameObject;
 import actor.ActorNametag;
