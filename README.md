@@ -25,11 +25,11 @@ A profile flagged `Main.update` as a heavy cost: it rescanned every actor on the
 - The HUD-layer coordinate conversion only recomputes when the view is actually resized.
 - Remote players' buff/debuff icon strips only rebuild when a buff actually changes, not every frame.
 
-No visible behavior should differ; file an issue if something looks off after updating.
+No visible behavior should differ; file an issue if something looks off after updating. Verified loading cleanly under DRH Mod API 1.4.0 on V17 (`last-run.json` status `ok`), hence the API requirement bump to 1.4 in this release.
 
 ## Requirements
 
-Dungeon Rampage Haxe V17 and DRH Mod API 1.2 or a compatible later 1.x release. The launcher resolves the API dependency. This mod uses game internals and may need updates for later game releases.
+Dungeon Rampage Haxe V17 and DRH Mod API 1.4 or a compatible later 1.x release. The launcher resolves the API dependency. This mod uses game internals and may need updates for later game releases.
 
 ## Installation
 

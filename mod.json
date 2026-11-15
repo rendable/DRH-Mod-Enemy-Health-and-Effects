@@ -2,9 +2,9 @@
   "id": "enemy_health_and_effects",
   "name": "Enemy Health and Effects",
   "description": "Adds numerical enemy HP, encounter-specific boss panels, player mana bars and buff/debuff icons for other players.",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "author": "Danny",
-  "api": "1.2",
+  "api": "1.4",
   "drh": "17",
   "entry": "Main",
   "uses": [
