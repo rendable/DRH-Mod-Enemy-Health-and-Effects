@@ -14,6 +14,19 @@ Adds numerical enemy HP, encounter-specific boss panels, player mana bars and bu
 - Other players' buff/debuff icons show stacks without estimated countdowns. Enemies and boss panels have no added status icons.
 <!-- /drh:show -->
 
+## Performance (0.9.0)
+
+A profile flagged `Main.update` as a heavy cost: it rescanned every actor on the floor and recomputed everything from scratch on every single frame. 0.9.0 keeps the same behavior but changes *when* things run:
+
+- Who qualifies as a tracked enemy, boss status, and the golem-pool state are rechecked a few times a second instead of every frame; only HP/position/visibility for already-tracked enemies run every frame now.
+- The two separate full-actor scans (golem pools, then enemies) are merged into one pass.
+- Per-enemy static facts (map constant, nametag offset, health-bar scale) are read once and cached instead of re-read from the game object every frame.
+- Enemy HP is read once from the game's own HP-change event instead of also being polled every frame.
+- The HUD-layer coordinate conversion only recomputes when the view is actually resized.
+- Remote players' buff/debuff icon strips only rebuild when a buff actually changes, not every frame.
+
+No visible behavior should differ; file an issue if something looks off after updating.
+
 ## Requirements
 
 Dungeon Rampage Haxe V17 and DRH Mod API 1.2 or a compatible later 1.x release. The launcher resolves the API dependency. This mod uses game internals and may need updates for later game releases.

@@ -31,16 +31,28 @@ class Main extends Mod {
     var manaFailed:Bool = false;
     var bossSlots:BossSlots = new BossSlots();
     var bossOverflow:NativeHpText;
+    // Membership (who qualifies as a tracked enemy) is rescanned a few times a
+    // second instead of every frame; only position/visibility/HP-bar sync for
+    // already-tracked entries runs every frame.
+    var nextActorScan:Float = 0;
+    inline static var ACTOR_SCAN_INTERVAL:Float = 200;
+    var floorMap:String = "";
+    var floorTileIds:Array<String> = [];
+    var golemRemaining:Int = 3;
+    // Buff icons only need rebuilding when a buff actually appears/disappears.
+    var effectsDirty:Bool = true;
+    var lastViewWidth:Float = -1;
+    var lastViewHeight:Float = -1;
 
     override public function init(context:Context):Void {
         this.context = context;
         context.overlay.mouseEnabled = false;
         context.overlay.mouseChildren = false;
         context.core.onObjectReady(function(object) {
-            if (Std.isOfType(object, DistributedBuffGameObject)) recordBuff(cast object);
+            if (Std.isOfType(object, DistributedBuffGameObject)) { recordBuff(cast object); effectsDirty = true; }
         });
         context.core.onObjectGone(function(object) {
-            if (Std.isOfType(object, DistributedBuffGameObject)) buffs.remove(object.id);
+            if (Std.isOfType(object, DistributedBuffGameObject)) { buffs.remove(object.id); effectsDirty = true; }
         });
         context.onFloorExit(function(floor) {
             clearEnemies();
@@ -88,82 +100,37 @@ class Main extends Mod {
             }
             var floor:DistributedDungeonFloor = cast Reflect.field(wrapper, "floor");
             if (floor == null || floor.isDestroyed || floor.remoteActors == null) return;
+            var now:Float = facade.gameClock.gameTime;
             if (lastFloor != floor.id) {
                 clearEnemies();
                 lastFloor = floor.id;
-            }
-            for (entry in entries) {
-                entry.seen = false;
-                entry.selectPanel(false);
-                entry.decorations.visible = false;
-                if (entry.panel != null) entry.panel.visible = false;
+                floorMap = floor.gmMapNode == null ? "" : floor.gmMapNode.Constant;
+                nextActorScan = 0;
             }
             var owner = floor.activeOwnerAvatar;
             var heroes:Int = owner == null ? (DBGlobal.TEAM_1 : Int) : owner.team;
             var hidden = facade.uiHideToggle != null && facade.uiHideToggle.hidden;
-            updatePlayerMana(floor, hidden);
-            // Normalize the generic UI layer to authored design coordinates.
-            // Layer 51 is a specially repositioned top-center HUD background.
-            if (bossLayer.parent != null) {
-                var zero = bossLayer.parent.globalToLocal(facade.scalingRoot.localToGlobal(new Point(0, 0)));
-                var unit = bossLayer.parent.globalToLocal(facade.scalingRoot.localToGlobal(new Point(1, 1)));
-                bossLayer.x = zero.x;
-                bossLayer.y = zero.y;
-                bossLayer.scaleX = unit.x - zero.x;
-                bossLayer.scaleY = unit.y - zero.y;
+            // Membership (who qualifies, who's a boss, golem pool state) only
+            // needs rechecking a few times a second, not every frame.
+            if (now >= nextActorScan) {
+                nextActorScan = now + ACTOR_SCAN_INTERVAL;
+                scanActors(floor, heroes);
             }
+            updatePlayerMana(floor, hidden);
+            syncBossLayerTransform();
             bossOverflow.visible = false;
             var bossCandidates:Array<EnemyEntry> = [];
-            var tileIds:Array<String> = [];
-            var usages:Dynamic = Reflect.field(floor, "mTileNetworkComponents");
-            if (usages != null) for (i in 0...Std.int(usages.length)) tileIds.push(Std.string(usages[i].tileId));
-            var map = floor.gmMapNode == null ? "" : floor.gmMapNode.Constant;
-            // These are the three encounter pools, not the approach-room lava traps.
-            // Read before HP/team/prop filtering: pools are non-attackable zero-HP props.
-            for (actor in floor.remoteActors.toArray()) {
-                if (!Std.isOfType(actor, NPCGameObject)) continue;
-                var pool:NPCGameObject = cast actor;
-                if (pool.gmNpc != null && pool.gmNpc.Constant == "JURASSIC_TRIBAL_BOSS_TRAP_LAVA_A")
-                    golemPools.set(pool.id, pool);
-            }
-            for (pool in golemPools) {
-                // Absence alone never counts as completion.
-                if (!pool.isDestroyed && !pool.triggerState && !hardenedPools.exists(pool.id)) {
-                    hardenedPools.set(pool.id, true);
-                    context.log("Golem lava pool hardened: " + pool.id);
-                }
-            }
-            var golemRemaining = 3;
-            for (id in hardenedPools.keys()) golemRemaining--;
-            for (actor in floor.remoteActors.toArray()) {
-                if (!Std.isOfType(actor, NPCGameObject)) continue;
-                var npc:NPCGameObject = cast actor;
-                if (npc.isDestroyed || npc.gmNpc == null || npc.isDead() || npc.hitPoints <= 0) continue;
-                var breakable = npc.isProp && npc.gmNpc.IsAttackable;
-                if (!breakable && (npc.team == heroes || npc.team == (DBGlobal.TEAM_ENVIRONMENT : Int)
-                    || npc.team == (DBGlobal.TEAM_3 : Int))) continue;
-                if (npc.isProp && !breakable) continue;
-                var isBoss = BossRules.qualifies(npc.gmNpc.Constant, map, tileIds, npc.gmNpc.IsBoss);
-                var entry = entries.get(npc.id);
-                if (entry == null) {
-                    entry = new EnemyEntry(facade, loader, npc, isBoss);
-                    entries.set(npc.id, entry);
-                    if (entry.panel != null) bossLayer.addChild(entry.panel);
-                    if (entry.boss) context.log("tracking boss " + npc.gmNpc.Constant + " (" + npc.gmNpc.Name + ")");
-                }
-                entry.setBoss(isBoss);
-                if (entry.panel != null && entry.panel.parent != bossLayer) bossLayer.addChild(entry.panel);
-                entry.seen = true;
-                if (npc.hitPoints < entry.hp) { entry.hit = true; entry.lastDamage = facade.gameClock.gameTime; }
-                entry.hp = npc.hitPoints;
-                entry.maxHP = npc.maxHitPoints;
+            for (entry in entries) {
+                entry.selectPanel(false);
+                entry.decorations.visible = false;
+                if (entry.panel != null) entry.panel.visible = false;
+                var npc = entry.npc;
+                if (npc.isDestroyed) continue;
                 entry.syncTag(false);
                 if (hidden || npc.actorView == null || npc.actorView.root == null) continue;
                 var root = npc.actorView.root;
                 var onStage = showing(root);
-                var offset = npc.gmNpc.NametagY;
-                if (Math.isNaN(offset) || offset <= 0) offset = 120;
-                var position = facade.scalingRoot.globalToLocal(root.localToGlobal(new Point(0, -offset)));
+                var position = facade.scalingRoot.globalToLocal(root.localToGlobal(new Point(0, -entry.nametagY)));
                 var onScreen = onStage && position.x >= -100 && position.x <= context.viewWidth + 100
                     && position.y >= -100 && position.y <= context.viewHeight + 100;
                 if (entry.boss && onStage && !onScreen) {
@@ -184,17 +151,89 @@ class Main extends Mod {
                 entry.decorations.scaleY = 1 / Math.max(0.01, Math.abs(root.scaleY));
             }
             renderBosses(bossCandidates, golemRemaining);
-            var remove:Array<Int> = [];
-            for (id in entries.keys()) if (!entries.get(id).seen) remove.push(id);
-            for (id in remove) {
-                entries.get(id).dispose();
-                entries.remove(id);
-            }
         } catch (error:Dynamic) {
             failed = true;
             clearEnemies();
             context.log("enemy overlay stopped: " + Std.string(error));
         }
+    }
+
+    // Who qualifies as a tracked enemy, and the golem-trap-pool state. Runs on
+    // a throttle (see ACTOR_SCAN_INTERVAL), not every frame: this is what
+    // used to call floor.remoteActors.toArray() twice a frame and re-filter
+    // every actor on the floor from scratch.
+    function scanActors(floor:DistributedDungeonFloor, heroes:Int):Void {
+        for (entry in entries) entry.seen = false;
+        // Tile-network membership can grow mid-floor (rooms/triggers unlocking
+        // further tiles), so this is re-read on every scan, not cached once
+        // per floor - just not on every single frame any more.
+        var tileIds:Array<String> = [];
+        var usages:Dynamic = Reflect.field(floor, "mTileNetworkComponents");
+        if (usages != null) for (i in 0...Std.int(usages.length)) tileIds.push(Std.string(usages[i].tileId));
+        floorTileIds = tileIds;
+        var actors = floor.remoteActors.toArray();
+        for (actor in actors) {
+            if (!Std.isOfType(actor, NPCGameObject)) continue;
+            var npc:NPCGameObject = cast actor;
+            // These are the three encounter pools, not the approach-room lava
+            // traps. Checked before HP/team/prop filtering: pools are
+            // non-attackable zero-HP props that would otherwise be skipped.
+            if (npc.gmNpc != null && npc.gmNpc.Constant == "JURASSIC_TRIBAL_BOSS_TRAP_LAVA_A")
+                golemPools.set(npc.id, npc);
+            if (npc.isDestroyed || npc.gmNpc == null || npc.isDead() || npc.hitPoints <= 0) continue;
+            var breakable = npc.isProp && npc.gmNpc.IsAttackable;
+            if (!breakable && (npc.team == heroes || npc.team == (DBGlobal.TEAM_ENVIRONMENT : Int)
+                || npc.team == (DBGlobal.TEAM_3 : Int))) continue;
+            if (npc.isProp && !breakable) continue;
+            // Some map-specific "boss" NPCs only start qualifying once a
+            // room/trigger tile activates mid-floor, so this is rechecked
+            // every scan rather than cached once at entry creation.
+            var isBoss = BossRules.qualifies(npc.gmNpc.Constant, floorMap, floorTileIds, npc.gmNpc.IsBoss);
+            var entry = entries.get(npc.id);
+            var wasBoss = entry != null && entry.boss;
+            if (entry == null) {
+                entry = new EnemyEntry(facade, loader, npc, isBoss);
+                entries.set(npc.id, entry);
+            } else {
+                entry.setBoss(isBoss);
+            }
+            if (entry.boss && !wasBoss) {
+                if (entry.panel != null) bossLayer.addChild(entry.panel);
+                context.log("tracking boss " + npc.gmNpc.Constant + " (" + npc.gmNpc.Name + ")");
+            }
+            entry.seen = true;
+        }
+        for (pool in golemPools) {
+            // Absence alone never counts as completion.
+            if (!pool.isDestroyed && !pool.triggerState && !hardenedPools.exists(pool.id)) {
+                hardenedPools.set(pool.id, true);
+                context.log("Golem lava pool hardened: " + pool.id);
+            }
+        }
+        golemRemaining = 3;
+        for (id in hardenedPools.keys()) golemRemaining--;
+        var remove:Array<Int> = [];
+        for (id in entries.keys()) if (!entries.get(id).seen) remove.push(id);
+        for (id in remove) {
+            entries.get(id).dispose();
+            entries.remove(id);
+        }
+    }
+
+    // Normalize the generic UI layer to authored design coordinates. Layer 51
+    // is a specially repositioned top-center HUD background. Only the view
+    // size can actually change this, so skip the conversion otherwise.
+    function syncBossLayerTransform():Void {
+        if (bossLayer.parent == null) return;
+        if (context.viewWidth == lastViewWidth && context.viewHeight == lastViewHeight) return;
+        lastViewWidth = context.viewWidth;
+        lastViewHeight = context.viewHeight;
+        var zero = bossLayer.parent.globalToLocal(facade.scalingRoot.localToGlobal(new Point(0, 0)));
+        var unit = bossLayer.parent.globalToLocal(facade.scalingRoot.localToGlobal(new Point(1, 1)));
+        bossLayer.x = zero.x;
+        bossLayer.y = zero.y;
+        bossLayer.scaleX = unit.x - zero.x;
+        bossLayer.scaleY = unit.y - zero.y;
     }
 
     function renderBosses(candidates:Array<EnemyEntry>, golemRemaining:Int):Void {
@@ -218,7 +257,7 @@ class Main extends Mod {
             if (row >= 0) {
                 entry.panel.visible = true;
                 entry.decorations.visible = false;
-                if (entry.npc.gmNpc.Constant == "BOSS_GOLEM") entry.panel.updateObjectives(golemRemaining, width);
+                if (entry.objectives) entry.panel.updateObjectives(golemRemaining, width);
                 else entry.panel.updateHP(entry.hp, entry.maxHP, width);
                 entry.panel.x = (context.viewWidth - width) / 2;
                 entry.panel.y = top + row * 56;
@@ -306,15 +345,20 @@ class Main extends Mod {
                 // Defer artwork until another player actually needs it.
                 if (manaArt == null) manaArt = new ManaBarArt(loader);
                 var player = players.get(hero.id);
-                if (player == null) {
+                var brandNew = player == null;
+                if (brandNew) {
                     player = new PlayerManaEntry(hero, manaArt, loader);
                     players.set(hero.id, player);
                     context.log("tracking remote player bars/effects: " + hero.id);
                 }
                 player.seen = true;
-                syncEffects(hero.id, player.effectStrip.effects, player.effectStrip.layer, 6, 0);
+                // Rebuilding the icon strip (map + array + sort) is only worth
+                // doing when a buff actually changed, or for a player we've
+                // never synced yet.
+                if (effectsDirty || brandNew) syncEffects(hero.id, player.effectStrip.effects, player.effectStrip.layer, 6, 0);
                 player.update(hidden);
             }
+            effectsDirty = false;
             var remove:Array<Int> = [];
             for (id in players.keys()) if (!players.get(id).seen) remove.push(id);
             for (id in remove) {

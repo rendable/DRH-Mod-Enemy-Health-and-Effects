@@ -27,6 +27,11 @@ class EnemyEntry {
     public var hp:Float = 0;
     public var maxHP:Float = 0;
     public var tag:ActorNametag;
+    // Static per-NPC facts, read once at creation instead of every frame.
+    public var constant:String;
+    public var nametagY:Float;
+    public var healthbarScale:Float;
+    public var objectives:Bool;
     var facade:DBFacade;
     var loader:AssetLoadingComponent;
     var eventName:String;
@@ -45,7 +50,13 @@ class EnemyEntry {
         hp = npc.hitPoints;
         maxHP = npc.maxHitPoints;
         // Never infer damage from scaled initial HP being below max HP.
-        var constant = npc.gmNpc == null || npc.gmNpc.Constant == null ? "" : npc.gmNpc.Constant;
+        constant = npc.gmNpc == null || npc.gmNpc.Constant == null ? "" : npc.gmNpc.Constant;
+        nametagY = npc.gmNpc == null ? Math.NaN : npc.gmNpc.NametagY;
+        if (Math.isNaN(nametagY) || nametagY <= 0) nametagY = 120;
+        healthbarScale = npc.gmNpc == null ? 1 : npc.gmNpc.HealthbarScale;
+        if (!(healthbarScale > 0)) healthbarScale = 1;
+        // The objective-only Golem has no meaningful actor HP to display.
+        objectives = constant == "BOSS_GOLEM";
         decorations = new Sprite();
         decorations.mouseEnabled = false;
         decorations.mouseChildren = false;
@@ -66,7 +77,7 @@ class EnemyEntry {
         if (boss == value) return;
         boss = value;
         if (boss && panel == null) panel = new HealthPanel(facade, loader,
-            BossRules.title(npc.gmNpc.Constant, npc.gmNpc.Name), npc.gmNpc.Constant == "BOSS_GOLEM");
+            BossRules.title(constant, npc.gmNpc.Name), objectives);
         selectPanel(false);
         if (!boss && panel != null) { panel.dispose(); panel = null; }
     }
@@ -82,12 +93,10 @@ class EnemyEntry {
         var view = npc.actorView;
         var current = npc.actorNametag;
         // Panel selection must not suppress the actor's numerical HP strip.
-        // The objective-only Golem has no meaningful actor HP to display.
-        var objectives = npc.gmNpc.Constant == "BOSS_GOLEM";
         if (current == null && show && !objectives) {
             var work:LogicalWorkComponent = cast Reflect.field(view, "mLogicalWorkComponent");
             if (work == null) return;
-            current = new ActorNametag(facade, loader, work, npc.gmNpc.NametagY);
+            current = new ActorNametag(facade, loader, work, nametagY);
             current.cacheAsBitmap = true;
             Reflect.setField(view, "mNametag", current);
             view.root.addChild(current);
@@ -102,13 +111,12 @@ class EnemyEntry {
         tag.visible = show && !objectives;
         if (!show || objectives) return;
         tag.hpBarVisible = true;
-        tag.setHp(npc.hitPoints, Std.int(npc.maxHitPoints));
+        // hp/maxHP are kept current by the HpEvent listener, not re-read from npc here.
+        tag.setHp(hp, Std.int(maxHP));
         var bar = tag.hpBar;
         if (bar != null) {
-            var scale = npc.gmNpc.HealthbarScale;
-            if (!(scale > 0)) scale = 1;
-            bar.scaleX = scale / Math.max(0.01, Math.abs(view.root.scaleX));
-            bar.scaleY = scale / Math.max(0.01, Math.abs(view.root.scaleY));
+            bar.scaleX = healthbarScale / Math.max(0.01, Math.abs(view.root.scaleX));
+            bar.scaleY = healthbarScale / Math.max(0.01, Math.abs(view.root.scaleY));
             var background:DisplayObject = bar.getChildByName("hpBarBg");
             var box = background == null ? bar.getBounds(view.root) : background.getBounds(view.root);
             if (number == null) {
@@ -125,7 +133,7 @@ class EnemyEntry {
                     index: textField.parent.getChildIndex(textField)
                 };
                 var bounds = background == null ? bar.getBounds(textField.parent) : background.getBounds(textField.parent);
-                var text = NativeHpText.formatHP(npc.hitPoints);
+                var text = NativeHpText.formatHP(hp);
                 var layout = text + "|" + bounds.x + "|" + bounds.y + "|" + bounds.width + "|" + bounds.height + "|" + number.styleReady;
                 if (layout != lastLayout) {
                     tag.screenName = text;
