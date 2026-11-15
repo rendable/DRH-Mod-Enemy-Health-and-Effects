@@ -90,12 +90,8 @@ class Main extends Mod {
             var wrapper = context.state.floor;
             if (wrapper == null) {
                 if (bossOverflow != null) bossOverflow.visible = false;
-                for (player in players) player.hide();
-                for (entry in entries) {
-                    entry.syncTag(false);
-                    entry.decorations.visible = false;
-                    if (entry.panel != null) entry.panel.visible = false;
-                }
+                for (p in players) { var player:PlayerManaEntry = p; player.hide(); }
+                for (e in entries) { var entry:EnemyEntry = e; if (entry.shown) hideEntry(entry); }
                 return;
             }
             var floor:DistributedDungeonFloor = cast Reflect.field(wrapper, "floor");
@@ -115,19 +111,24 @@ class Main extends Mod {
             if (now >= nextActorScan) {
                 nextActorScan = now + ACTOR_SCAN_INTERVAL;
                 scanActors(floor, heroes);
+                scanPlayers(floor);
             }
-            updatePlayerMana(floor, hidden);
+            updatePlayerMana(hidden);
             syncBossLayerTransform();
             bossOverflow.visible = false;
             var bossCandidates:Array<EnemyEntry> = [];
-            for (entry in entries) {
-                entry.selectPanel(false);
-                entry.decorations.visible = false;
-                if (entry.panel != null) entry.panel.visible = false;
-                var npc = entry.npc;
-                if (npc.isDestroyed) continue;
-                entry.syncTag(false);
-                if (hidden || npc.actorView == null || npc.actorView.root == null) continue;
+            for (e in entries) {
+                var entry:EnemyEntry = e;
+                var npc:NPCGameObject = entry.npc;
+                if (npc.isDestroyed) { if (entry.shown) hideEntry(entry); continue; }
+                // Most enemies on a floor were never hit and aren't a boss -
+                // skip the on-screen test (coordinate conversion, bounds
+                // checks) entirely for them instead of doing it every frame.
+                if (!entry.hit && !entry.boss) { if (entry.shown) hideEntry(entry); continue; }
+                if (hidden || npc.actorView == null || npc.actorView.root == null) {
+                    if (entry.shown) hideEntry(entry);
+                    continue;
+                }
                 var root = npc.actorView.root;
                 var onStage = showing(root);
                 var position = facade.scalingRoot.globalToLocal(root.localToGlobal(new Point(0, -entry.nametagY)));
@@ -140,13 +141,12 @@ class Main extends Mod {
                 }
                 if (entry.boss && onScreen) entry.encountered = true;
                 var show = entry.boss ? entry.encountered && onScreen : entry.hit && onScreen;
-                if (!show || !(entry.maxHP > 0)) continue;
-                if (entry.boss) {
-                    bossCandidates.push(entry);
-                }
+                if (!show || !(entry.maxHP > 0)) { if (entry.shown) hideEntry(entry); continue; }
+                if (entry.boss) bossCandidates.push(entry);
                 // Until assigned a panel row, a boss uses its native overhead bar.
-                entry.syncTag(true);
                 entry.decorations.visible = true;
+                entry.shown = true;
+                entry.syncTag(true);
                 entry.decorations.scaleX = 1 / Math.max(0.01, Math.abs(root.scaleX));
                 entry.decorations.scaleY = 1 / Math.max(0.01, Math.abs(root.scaleY));
             }
@@ -158,12 +158,23 @@ class Main extends Mod {
         }
     }
 
+    // Hides an entry's overlay (decorations/tag/panel) and marks it not
+    // shown, so the per-frame loop can skip re-hiding an already-hidden
+    // entry instead of writing all four every frame regardless of state.
+    function hideEntry(entry:EnemyEntry):Void {
+        entry.selectPanel(false);
+        entry.decorations.visible = false;
+        if (entry.panel != null) entry.panel.visible = false;
+        entry.syncTag(false);
+        entry.shown = false;
+    }
+
     // Who qualifies as a tracked enemy, and the golem-trap-pool state. Runs on
     // a throttle (see ACTOR_SCAN_INTERVAL), not every frame: this is what
     // used to call floor.remoteActors.toArray() twice a frame and re-filter
     // every actor on the floor from scratch.
     function scanActors(floor:DistributedDungeonFloor, heroes:Int):Void {
-        for (entry in entries) entry.seen = false;
+        for (e in entries) { var entry:EnemyEntry = e; entry.seen = false; }
         // Tile-network membership can grow mid-floor (rooms/triggers unlocking
         // further tiles), so this is re-read on every scan, not cached once
         // per floor - just not on every single frame any more.
@@ -189,7 +200,7 @@ class Main extends Mod {
             // room/trigger tile activates mid-floor, so this is rechecked
             // every scan rather than cached once at entry creation.
             var isBoss = BossRules.qualifies(npc.gmNpc.Constant, floorMap, floorTileIds, npc.gmNpc.IsBoss);
-            var entry = entries.get(npc.id);
+            var entry:EnemyEntry = entries.get(npc.id);
             var wasBoss = entry != null && entry.boss;
             if (entry == null) {
                 entry = new EnemyEntry(facade, loader, npc, isBoss);
@@ -203,7 +214,8 @@ class Main extends Mod {
             }
             entry.seen = true;
         }
-        for (pool in golemPools) {
+        for (p in golemPools) {
+            var pool:NPCGameObject = p;
             // Absence alone never counts as completion.
             if (!pool.isDestroyed && !pool.triggerState && !hardenedPools.exists(pool.id)) {
                 hardenedPools.set(pool.id, true);
@@ -215,7 +227,8 @@ class Main extends Mod {
         var remove:Array<Int> = [];
         for (id in entries.keys()) if (!entries.get(id).seen) remove.push(id);
         for (id in remove) {
-            entries.get(id).dispose();
+            var entry:EnemyEntry = entries.get(id);
+            entry.dispose();
             entries.remove(id);
         }
     }
@@ -241,7 +254,8 @@ class Main extends Mod {
         var visible:Array<Int> = [];
         var priority = -1;
         var lastDamage:Float = facade.gameClock.gameTime - 1500;
-        for (entry in candidates) {
+        for (c in candidates) {
+            var entry:EnemyEntry = c;
             if (entry.panel.isReady()) visible.push(entry.npc.id);
             if (entry.lastDamage > lastDamage && entry.panel.isReady()) {
                 priority = entry.npc.id;
@@ -251,7 +265,8 @@ class Main extends Mod {
         var selected = bossSlots.select(visible, priority);
         var width = Math.min(450, context.viewWidth * 0.3);
         var top:Float = 145;
-        for (entry in candidates) {
+        for (c in candidates) {
+            var entry:EnemyEntry = c;
             var row = selected.indexOf(entry.npc.id);
             entry.selectPanel(row >= 0);
             if (row >= 0) {
@@ -262,11 +277,16 @@ class Main extends Mod {
                 entry.panel.x = (context.viewWidth - width) / 2;
                 entry.panel.y = top + row * 56;
                 entry.syncTag(true);
+            } else if (entry.panel != null) {
+                // Not assigned a row this frame (overflow, or bumped by a
+                // higher-priority boss) - make sure a stale panel from an
+                // earlier frame's selection doesn't stay visible.
+                entry.panel.visible = false;
             }
         }
         var bottom = top;
         for (id in selected) {
-            var entry = entries.get(id);
+            var entry:EnemyEntry = entries.get(id);
             entry.panel.y = bottom;
             bottom += 56;
         }
@@ -331,10 +351,14 @@ class Main extends Mod {
         return true;
     }
 
-    function updatePlayerMana(floor:DistributedDungeonFloor, hidden:Bool):Void {
+    // Who is a tracked remote player. Runs on the same throttle as
+    // scanActors (see ACTOR_SCAN_INTERVAL), not every frame: this is what
+    // used to call floor.remoteHeroes.toArray() every single frame just to
+    // find the same handful of players it found last frame.
+    function scanPlayers(floor:DistributedDungeonFloor):Void {
         if (manaFailed) return;
         try {
-            for (player in players) player.seen = false;
+            for (p in players) { var player:PlayerManaEntry = p; player.seen = false; }
             // Heroes and NPCs are held in separate collections by the floor.
             var heroes = floor.remoteHeroes;
             if (heroes == null) return;
@@ -344,30 +368,46 @@ class Main extends Mod {
                 if (hero.isOwner || hero.isDestroyed || hero.playerID == 0) continue;
                 // Defer artwork until another player actually needs it.
                 if (manaArt == null) manaArt = new ManaBarArt(loader);
-                var player = players.get(hero.id);
-                var brandNew = player == null;
-                if (brandNew) {
+                var player:PlayerManaEntry = players.get(hero.id);
+                if (player == null) {
                     player = new PlayerManaEntry(hero, manaArt, loader);
                     players.set(hero.id, player);
                     context.log("tracking remote player bars/effects: " + hero.id);
+                    syncEffects(hero.id, player.effectStrip.effects, player.effectStrip.layer, 6, 0);
                 }
                 player.seen = true;
-                // Rebuilding the icon strip (map + array + sort) is only worth
-                // doing when a buff actually changed, or for a player we've
-                // never synced yet.
-                if (effectsDirty || brandNew) syncEffects(hero.id, player.effectStrip.effects, player.effectStrip.layer, 6, 0);
-                player.update(hidden);
             }
-            effectsDirty = false;
             var remove:Array<Int> = [];
             for (id in players.keys()) if (!players.get(id).seen) remove.push(id);
             for (id in remove) {
-                players.get(id).dispose();
+                var player:PlayerManaEntry = players.get(id);
+                player.dispose();
                 players.remove(id);
             }
         } catch (error:Dynamic) {
             manaFailed = true;
-            for (player in players) player.dispose();
+            for (p in players) { var player:PlayerManaEntry = p; player.dispose(); }
+            players.clear();
+            context.log("player mana bars stopped: " + Std.string(error));
+        }
+    }
+
+    // Per-frame refresh (position/bars/icons) for already-known players;
+    // membership itself is handled by scanPlayers above.
+    function updatePlayerMana(hidden:Bool):Void {
+        if (manaFailed) return;
+        try {
+            for (id in players.keys()) {
+                var player:PlayerManaEntry = players.get(id);
+                // Rebuilding the icon strip (map + array + sort) is only
+                // worth doing when a buff actually changed.
+                if (effectsDirty) syncEffects(id, player.effectStrip.effects, player.effectStrip.layer, 6, 0);
+                player.update(hidden);
+            }
+            effectsDirty = false;
+        } catch (error:Dynamic) {
+            manaFailed = true;
+            for (p in players) { var player:PlayerManaEntry = p; player.dispose(); }
             players.clear();
             context.log("player mana bars stopped: " + Std.string(error));
         }

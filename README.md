@@ -27,6 +27,15 @@ A profile flagged `Main.update` as a heavy cost: it rescanned every actor on the
 
 No visible behavior should differ; file an issue if something looks off after updating. Verified loading cleanly under DRH Mod API 1.4.0 on V17 (`last-run.json` status `ok`), hence the API requirement bump to 1.4 in this release.
 
+## Performance (0.9.2)
+
+Follow-up to 0.9.0 after the mod owner's measured per-frame cost dropped from +1.0ms to +0.4ms but was still the most expensive mod on the list:
+
+- The per-frame loop skips enemies that were never hit and aren't a boss before doing any on-screen work, instead of running the coordinate conversion and bounds checks for every tracked enemy on the floor.
+- Decorations/HP-bar/panel visibility are only touched when an enemy's shown state actually changes, instead of being reset to hidden and reapplied every frame.
+- Loop variables over the enemy/player maps are explicitly typed instead of left to per-frame dynamic field lookups.
+- Remote-player membership (who's a tracked player) moved onto the same throttled scan as enemy membership, instead of copying the floor's player list every frame.
+
 ## Requirements
 
 Dungeon Rampage Haxe V17 and DRH Mod API 1.4 or a compatible later 1.x release. The launcher resolves the API dependency. This mod uses game internals and may need updates for later game releases.

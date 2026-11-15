@@ -21,6 +21,9 @@ class EnemyEntry {
     public var encountered:Bool = false;
     public var seen:Bool = false;
     public var boss:Bool = false;
+    // Whether the overlay is currently applied (decorations visible / tag
+    // showing). Lets Main skip re-hiding entries that are already hidden.
+    public var shown:Bool = false;
     public var panelSelected:Bool = false;
     public var lastDamage:Float = -1;
     public var effects:Map<Int, EffectIcon> = new Map();
