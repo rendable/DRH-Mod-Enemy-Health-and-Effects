@@ -31,9 +31,14 @@ class PlayerManaEntry {
 
     public function update(hidden:Bool):Void {
         hide();
+        // Membership is only rechecked every ~200ms now (see Main.scanPlayers),
+        // so a hero destroyed between scans can still reach here. Test that
+        // before touching the hero at all - hero.actorNametag is not safe to
+        // read on a destroyed actor.
+        if (hero.isDestroyed || hero.isDead()) return;
         effectStrip.update(hidden);
         var tag = hero.actorNametag;
-        if (!art.ready() || hero.isDestroyed || hero.isDead() || tag == null || !tag.shownOnScreen
+        if (!art.ready() || tag == null || !tag.shownOnScreen
             || !tag.hpBarVisible || hidden || !(hero.maxManaPoints > 0)) return;
         var bar = tag.hpBar;
         if (bar == null || bar.parent == null) return;

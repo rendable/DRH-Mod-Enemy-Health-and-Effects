@@ -36,6 +36,10 @@ Follow-up to 0.9.0 after the mod owner's measured per-frame cost dropped from +1
 - Loop variables over the enemy/player maps are explicitly typed instead of left to per-frame dynamic field lookups.
 - Remote-player membership (who's a tracked player) moved onto the same throttled scan as enemy membership, instead of copying the floor's player list every frame.
 
+### 0.9.3 fix
+
+Moving player membership onto a throttled scan meant a hero destroyed between scans (e.g. leaving the dungeon mid-floor) could still reach `PlayerManaEntry.update` for up to ~200ms, which read `hero.actorNametag` before checking `hero.isDestroyed` and could throw. 0.9.3 checks `isDestroyed`/`isDead` first and returns before touching the hero.
+
 ## Requirements
 
 Dungeon Rampage Haxe V17 and DRH Mod API 1.4 or a compatible later 1.x release. The launcher resolves the API dependency. This mod uses game internals and may need updates for later game releases.
